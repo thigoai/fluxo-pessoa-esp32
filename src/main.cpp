@@ -119,28 +119,49 @@ void aoReceber(const uint8_t *mac, const uint8_t *dados, int len) {
     }
 }
 
+// na versão mais nova do esp now:
+// void aoReceber(const esp_now_recv_info *info, const uint8_t *dados, int len) {
+//     if (len != sizeof(PacoteEspNow)) return;
+//     PacoteEspNow pkt;
+//     memcpy(&pkt, dados, sizeof(pkt));
+
+//     if (pkt.tipo == PKT_CANCELAR) {
+//         filaRemoverRecente();
+//         Serial.printf("[ESP-NOW] Cancelamento do piso %d (fila: %d)\n", pkt.piso, filaTamanho);
+//     } else {
+//         filaAdicionar();
+//         Serial.printf("[ESP-NOW] Deteccao do piso %d (fila: %d)\n", pkt.piso, filaTamanho);
+//     }
+// }
+
+void atualizarContador(bool subiu) {
+    if (subiu) {
+        pessoasNoAndar2++;
+    } else {
+        pessoasNoAndar2--;
+        if (pessoasNoAndar2 < 0) pessoasNoAndar2 = 0;
+    }
+    Serial.println();
+    Serial.println("╔══════════════════════════════════════════╗");
+    if (subiu)
+        Serial.println("║   ▲  SUBIDA DETECTADA     (1 → 2)       ║");
+    else
+        Serial.println("║   ▼  DESCIDA DETECTADA    (2 → 1)       ║");
+    Serial.printf ("║   Pessoas no andar 2: %-3d                ║\n", pessoasNoAndar2);
+    Serial.println("╚══════════════════════════════════════════╝");
+    Serial.println();
+    // TODO IoT: publicar via MQTT aqui
+}
+
+
 void verificarEReportarDirecao() {
     unsigned long agora = millis();
     if (filaTemValida(agora)) {
         // Vizinho detectou antes → pessoa veio de lá para cá
-        Serial.println();
-        Serial.println("╔══════════════════════════════════════════╗");
-        if (MEU_PISO == 2) {
-            Serial.println("║   ▲  SUBIDA DETECTADA     (1 → 2)       ║");
-            pessoasNoAndar2++;
-        } else {
-            Serial.println("║   ▼  DESCIDA DETECTADA    (2 → 1)       ║");
-            pessoasNoAndar2--;
-            if (pessoasNoAndar2 < 0) pessoasNoAndar2 = 0;
-        }
-        Serial.printf ("║   Deteccoes vizinho na fila: %d           ║\n", filaTamanho);
-        Serial.println("╚══════════════════════════════════════════╝");
-        Serial.printf("Pessoas no andar 2: %d\n", pessoasNoAndar2);
-        Serial.println();
-        filaConsumirAntiga();   // consome apenas UMA entrada
-        // TODO IoT: publicar via MQTT aqui
+        bool subiu = (MEU_PISO == 2);  // cheguei no 2 vindo do 1 = subida
+        atualizarContador(subiu);
+        filaConsumirAntiga();
     } else {
-        // Nós fomos os primeiros — o vizinho vai reportar quando confirmar
         Serial.printf("[LOCAL] Piso %d committed. Vizinho reportara a direcao.\n", MEU_PISO);
     }
 }
@@ -180,27 +201,21 @@ void loop() {
 
     switch (estado) {
 
-        // Aguarda evento do PIR 
         case AGUARDANDO:
             if (contadorPIR > 0) {
                 contadorPIR--;
                 tEntradaEstado = agora;
                 zonaLivre      = false;
                 estado         = CONFIRMANDO;
-                Serial.printf("[PIR] Evento (restantes na fila: %d). Confirmando...\n",
-                              contadorPIR);
+                Serial.printf("[PIR] Evento (restantes: %d). Confirmando...\n", contadorPIR);
             }
             break;
 
-        // Confirma com ultrassônico 
         case CONFIRMANDO: {
             long d = lerDistancia();
-
             if (d > 0 && d <= DIST_MAX_CM) {
                 digitalWrite(PIN_LED, HIGH);
-                Serial.printf("[CONFIRMADO] Piso %d — %ld cm. Monitorando retorno...\n",
-                              MEU_PISO, d);
-                // Avisa vizinho — direção só é reportada no COMMIT
+                Serial.printf("[CONFIRMADO] Piso %d — %ld cm\n", MEU_PISO, d);
                 enviarPacote(PKT_DETECCAO);
                 zonaLivre      = false;
                 tEntradaEstado = agora;
@@ -213,30 +228,24 @@ void loop() {
             break;
         }
 
-        // Monitora retorno pelo ultrassônico 
-        // Retorno = zona fica livre e então volta a ficar ocupada
-        // Novo PIR = segunda pessoa (mantido no contador, processado depois)
         case MONITORANDO: {
             long d = lerDistancia();
             unsigned long tempo = agora - tEntradaEstado;
 
-            // Passo 1: detecta quando a pessoa saiu da zona
             if (!zonaLivre && d > DIST_MAX_CM) {
                 zonaLivre = true;
                 Serial.println("[MONIT] Zona livre. Aguardando commit...");
             }
 
-            // Passo 2: zona fica ocupada de novo antes do commit → voltou
-            //if (zonaLivre && d <= DIST_MAX_CM && tempo < TEMPO_COMMIT) {
-            //    Serial.println("[RETORNO] Pessoa voltou! Cancelando.\n");
-            //    enviarPacote(PKT_CANCELAR);
-            //    digitalWrite(PIN_LED, LOW);
-            //    tEntradaEstado = agora;
-            //    estado         = COOLDOWN;
-            //    break;
-            //}
+            // if (zonaLivre && d <= DIST_MAX_CM && tempo < TEMPO_COMMIT) {
+            //     Serial.println("[RETORNO] Pessoa voltou! Cancelando.\n");
+            //     enviarPacote(PKT_CANCELAR);
+            //     digitalWrite(PIN_LED, LOW);
+            //     tEntradaEstado = agora;
+            //     estado         = COOLDOWN;
+            //     break;
+            // }
 
-            // Passo 3: tempo esgotado sem retorno → commit
             if (tempo >= TEMPO_COMMIT) {
                 Serial.println("[COMMIT] Passagem definitiva.");
                 verificarEReportarDirecao();
@@ -246,8 +255,6 @@ void loop() {
             break;
         }
 
-        // Pausa entre detecções (não bloqueante)
-        // contadorPIR NÃO é zerado — pessoas na fila são processadas
         case COOLDOWN:
             if (agora - tEntradaEstado >= COOLDOWN_MS) {
                 digitalWrite(PIN_LED, LOW);

@@ -6,6 +6,9 @@ O projeto consiste em um sistema de IoT distribuído para monitoramento da ocupa
 A arquitetura de rede é híbrida: utiliza **ESP-NOW** para comunicação de baixíssima latência entre os nós da borda (sincronismo dos degraus) e **Wi-Fi/MQTT** para reporte de dados à nuvem (Adafruit IO).
 
 ## 2. Arquitetura de Hardware
+
+<img width="500" alt="Arquitetura de Sistema" src="Diagrama_ Arquitetura_de_Sistema.png" />
+
 Cada pavimento (nó) é composto pelo seguinte conjunto de hardware:
 * **Microcontrolador:** ESP32 (atuando simultaneamente como Emissor/Receptor ESP-NOW e Cliente MQTT).
 * **Sensor de Gatilho (Interrupção):** Sensor PIR. Responsável por acordar o sistema e registrar o início do movimento de forma assíncrona.

@@ -1,10 +1,9 @@
-#include <Arduino.h>
 #include <esp_now.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
 
 //  CONFIGURAÇÃO DO SISTEMA
-#define MEU_PISO  1 // Mude para 1 no ESP do piso inferior, e 2 no do piso superior
+#define MEU_PISO  2 // Mude para 1 no ESP do piso inferior, e 2 no do piso superior
 
 #if MEU_PISO == 1
   uint8_t MAC_VIZINHO[] = {0x94, 0xE6, 0x86, 0x05, 0xA3, 0x68};
@@ -32,10 +31,12 @@ const char* WIFI_PASS = "";
 
 const char* MQTT_SERVER = "io.adafruit.com";
 const int   MQTT_PORT   = 1883;
-const char* MQTT_USER   = ""; 
-const char* MQTT_PASS   = ""; 
+const char* MQTT_USER   = " "; 
+const char* MQTT_PASS   = " "; 
 
-const char* FEED_FLUXO  = "";
+const char* FEED_FLUXO  = " ";
+const char* FEED_GRAFICO  = " ";
+
 
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
@@ -146,13 +147,22 @@ void verificarEReportarDirecao() {
     if (filaTemValida(agora)) {
         Serial.println();
         Serial.println("╔══════════════════════════════════════════╗");
+
+        float valorFluxo;
+
         if (MEU_PISO == 2) {
             Serial.println("║   ▲  SUBIDA DETECTADA     (1 → 2)       ║");
             mqtt.publish(FEED_FLUXO, "Subida (1 -> 2)");
+            valorFluxo = 1.0;
         } else {
             Serial.println("║   ▼  DESCIDA DETECTADA    (2 → 1)       ║");
             mqtt.publish(FEED_FLUXO, "Descida (2 -> 1)");
+            valorFluxo = 0.0;
         }
+
+        mqtt.publish(FEED_GRAFICO, String(valorFluxo).c_str());
+        
+
         Serial.printf ("║   Deteccoes vizinho na fila: %d           ║\n", filaTamanho);
         Serial.println("╚══════════════════════════════════════════╝");
         Serial.println();
